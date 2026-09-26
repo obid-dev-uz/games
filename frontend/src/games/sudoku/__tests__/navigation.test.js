@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { goBack } from "../navigation";
+import { goBack } from "../utils/navigation";
 
 const router = () => ({ back: vi.fn(), replace: vi.fn() });
 

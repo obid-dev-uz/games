@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { goBack } from "@/shared/navigation";
+import { goBack } from "../utils/navigation";
 import SudokuIcon from "../components/SudokuIcon.vue";
 import { useSudokuGameStore } from "../stores/game";
 import { DIFFICULTIES } from "../engine/difficulty";

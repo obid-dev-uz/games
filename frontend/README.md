@@ -48,7 +48,7 @@ src/
 ├── App.vue            safe-area qobig'i + <RouterView/>
 ├── router/            o'yin marshrutlarini avtomatik yig'adi
 ├── launcher/          bosh ekran (o'yinlar ro'yxati)
-├── shared/            umumiy, ma'lumotsiz yordamchilar
+├── shared/            faqat ilova qobig'i uchun (o'yinlar reyestri); o'yinlar ishlatmaydi
 ├── styles/main.css    Tailwind + mobil sozlamalar
 └── games/
     └── <id>/          bitta o'yinga kerak bo'lgan hamma narsa
@@ -61,5 +61,9 @@ Har bir o'yin `src/games/<id>/` papkasida to'liq izolyatsiyada yashaydi:
 1. `manifest.js` fayli `{ id, name, icon, color, order, routes }` obyektini qaytaradi. `id` papka nomiga teng bo'lishi shart. Launcher o'yinni avtomatik topadi.
 2. Marshrutlar `/<id>/...` ostida joylashadi, marshrut nomlari `<id>-` bilan boshlanadi.
 3. Pinia store id'lari `<id>/` bilan boshlanadi, masalan `defineStore("sudoku/game", ...)`.
-4. Ma'lumotlar faqat `createStorage("<id>")` orqali saqlanadi, kalitlar `kho.<id>.*` ko'rinishida bo'ladi.
-5. O'yinlar bir-birini import qilmaydi. Umumiy kod faqat `src/shared/` dan olinadi.
+4. Ma'lumotlar o'yinning o'z `storage.js` fayli orqali saqlanadi, kalitlar `kho.<id>.*` ko'rinishida bo'ladi.
+5. **O'yinlar hech qanday umumiy kodga ega emas.** O'yin papkasi faqat o'z ichidagi fayllarni va npm
+   paketlarini import qiladi: boshqa o'yinni ham, `src/shared/` ni ham, `@/...` ni ham emas.
+   Saqlash, navigatsiya, ovoz, vibratsiya, ikonkalar, test yordamchilari: hammasi har bir o'yinning
+   o'z papkasida, kerak bo'lsa nusxa ko'chiriladi. Bu qoidani `src/__tests__/gameIsolation.test.js`
+   tekshiradi, `pnpm test` buzilishni fayl va import bilan ko'rsatadi.

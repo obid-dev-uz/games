@@ -8,7 +8,7 @@ import NumberPad from "../components/NumberPad.vue";
 import ResultModal from "../components/ResultModal.vue";
 import SudokuIcon from "../components/SudokuIcon.vue";
 import { useSudokuGameStore } from "../stores/game";
-import { goBack } from "@/shared/navigation";
+import { goBack } from "../utils/navigation";
 import { useSudokuFeedback, WAVE_MS } from "../composables/useSudokuFeedback";
 import t from "../locales/uz";
 

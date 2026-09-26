@@ -3,8 +3,8 @@ import { setActivePinia, createPinia } from "pinia";
 import { nextTick } from "vue";
 
 vi.mock("../storage", async () => {
-  const { createStorage } = await import("@/shared/createStorage");
-  const { createMemoryStorage } = await import("@/shared/memoryStorage");
+  const { createStorage } = await import("../utils/createStorage");
+  const { createMemoryStorage } = await import("./memoryStorage");
   const backend = createMemoryStorage();
   return { default: createStorage("sudoku", backend), backend };
 });

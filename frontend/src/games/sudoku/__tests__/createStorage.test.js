@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStorage } from "../createStorage";
-import { createMemoryStorage } from "../memoryStorage";
+import { createStorage } from "../utils/createStorage";
+import { createMemoryStorage } from "./memoryStorage";
 
 describe("createStorage", () => {
   let backend;

@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { goBack } from "@/shared/navigation";
+import { goBack } from "../utils/navigation";
 import SudokuIcon from "../components/SudokuIcon.vue";
 import { useSudokuSettingsStore } from "../stores/settings";
 import { playSound } from "../feedback/sounds";
