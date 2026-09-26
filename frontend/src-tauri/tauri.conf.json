@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "kho-games",
+  "productName": "KHO Games",
   "version": "0.1.0",
   "identifier": "kho.games",
   "build": {
@@ -12,9 +12,10 @@
   "app": {
     "windows": [
       {
-        "title": "kho-games",
-        "width": 800,
-        "height": 600
+        "title": "KHO Games",
+        "width": 420,
+        "height": 860,
+        "resizable": true
       }
     ],
     "security": {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match the web app background (Tailwind slate-50) to avoid a flash on start
+         and so the system-bar areas blend in. -->
+    <color name="app_background">#F8FAFC</color>
+</resources>

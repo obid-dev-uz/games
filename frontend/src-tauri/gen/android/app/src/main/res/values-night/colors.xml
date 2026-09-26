@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tailwind slate-900, the web app's dark background -->
+    <color name="app_background">#0F172A</color>
+</resources>
