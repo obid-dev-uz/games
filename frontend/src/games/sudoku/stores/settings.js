@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
   vibration: true,
   highlightSame: true, // highlight every cell holding the selected digit
   showTimer: true,
+  mistakeLimit: true, // lose after MAX_MISTAKES mistakes; off = only count them (applies immediately)
 };
 
 export const useSudokuSettingsStore = defineStore("sudoku/settings", () => {

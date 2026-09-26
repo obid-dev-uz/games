@@ -1,0 +1,6 @@
+# Oldest engines the app supports (Android WebView / Chrome 88 = Jan 2021).
+# Used by autoprefixer; keep in sync with build.target in vite.config.js.
+chrome >= 88
+android >= 88
+safari >= 14
+ios_saf >= 14

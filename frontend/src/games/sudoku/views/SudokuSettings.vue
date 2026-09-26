@@ -15,6 +15,7 @@ const items = [
   { key: "vibration", label: t.settingsPage.vibration, hint: t.settingsPage.vibrationHint },
   { key: "highlightSame", label: t.settingsPage.highlightSame, hint: t.settingsPage.highlightSameHint },
   { key: "showTimer", label: t.settingsPage.showTimer, hint: t.settingsPage.showTimerHint },
+  { key: "mistakeLimit", label: t.settingsPage.mistakeLimit, hint: t.settingsPage.mistakeLimitHint },
 ];
 
 function toggle(key) {

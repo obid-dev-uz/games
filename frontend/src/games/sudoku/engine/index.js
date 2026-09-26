@@ -11,8 +11,8 @@ let workerBroken = false;
 let nextId = 0;
 const pending = new Map();
 
-const generateOnMainThread = (difficulty, seed) =>
-  Promise.resolve().then(() => generatePuzzle(difficulty, seed));
+const generateOnMainThread = (difficulty, seed, box) =>
+  Promise.resolve().then(() => generatePuzzle(difficulty, seed, box));
 
 function getWorker() {
   if (worker || workerBroken || typeof Worker === "undefined") return worker;
@@ -34,7 +34,7 @@ function getWorker() {
       const jobs = [...pending.values()];
       pending.clear();
       for (const job of jobs) {
-        generateOnMainThread(job.difficulty, job.seed).then(job.resolve, job.reject);
+        generateOnMainThread(job.difficulty, job.seed, job.box).then(job.resolve, job.reject);
       }
     };
   } catch {
@@ -48,13 +48,13 @@ function getWorker() {
  * Generates a puzzle in a Web Worker so the UI never freezes; falls back to
  * the main thread where workers are unavailable or fail to load.
  */
-export function generatePuzzleAsync(difficulty, seed) {
+export function generatePuzzleAsync(difficulty, seed, box = 3) {
   const w = getWorker();
-  if (!w) return generateOnMainThread(difficulty, seed);
+  if (!w) return generateOnMainThread(difficulty, seed, box);
 
   return new Promise((resolve, reject) => {
     const id = ++nextId;
-    pending.set(id, { resolve, reject, difficulty, seed });
-    w.postMessage({ id, difficulty, seed });
+    pending.set(id, { resolve, reject, difficulty, seed, box });
+    w.postMessage({ id, difficulty, seed, box });
   });
 }

@@ -5,24 +5,26 @@ import { goBack } from "@/shared/navigation";
 import SudokuIcon from "../components/SudokuIcon.vue";
 import { useSudokuStatsStore } from "../stores/stats";
 import { DIFFICULTIES } from "../engine/difficulty";
+import { BOX_SIZES } from "../engine/board";
 import { formatTime, formatPercent } from "../utils/format";
 import t from "../locales/uz";
 
 const router = useRouter();
 const stats = useSudokuStatsStore();
+const box = ref(3);
 const level = ref("easy");
 const confirming = ref(false);
 
 const tiles = computed(() => {
-  const s = stats.levels[level.value];
+  const s = stats.get(box.value, level.value);
   const p = t.statsPage;
   return [
     { label: p.played, value: s.played },
     { label: p.won, value: s.won },
-    { label: p.winRate, value: formatPercent(stats.winRate(level.value)) },
+    { label: p.winRate, value: formatPercent(stats.winRate(box.value, level.value)) },
     { label: p.perfect, value: s.perfectWins },
     { label: p.bestTime, value: formatTime(s.bestTimeMs) },
-    { label: p.averageTime, value: formatTime(stats.averageTimeMs(level.value)) },
+    { label: p.averageTime, value: formatTime(stats.averageTimeMs(box.value, level.value)) },
     { label: p.streak, value: s.currentStreak },
     { label: p.bestStreak, value: s.bestStreak },
   ];
@@ -48,7 +50,24 @@ function reset() {
       <h1 class="text-2xl font-bold">{{ t.stats }}</h1>
     </header>
 
-    <div class="mt-4 grid grid-cols-4 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800" role="tablist">
+    <!-- Board size -->
+    <div class="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800" role="tablist">
+      <button
+        v-for="b in BOX_SIZES"
+        :key="b"
+        type="button"
+        role="tab"
+        :aria-selected="box === b"
+        class="rounded-lg py-2 text-sm font-bold tabular-nums transition"
+        :class="box === b ? 'bg-white shadow dark:bg-slate-600' : 'text-slate-500 dark:text-slate-400'"
+        @click="box = b"
+      >
+        {{ b * b }}×{{ b * b }}
+      </button>
+    </div>
+
+    <!-- Difficulty -->
+    <div class="mt-2 grid grid-cols-4 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800" role="tablist">
       <button
         v-for="l in DIFFICULTIES"
         :key="l.id"

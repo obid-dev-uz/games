@@ -44,6 +44,7 @@ const game = useSudokuGameStore();
           <div>
             <dt class="text-slate-500 dark:text-slate-400">Daraja</dt>
             <dd class="font-semibold">{{ DIFFICULTIES[game.difficulty]?.label }}</dd>
+            <dd class="text-xs text-slate-500 tabular-nums dark:text-slate-400">{{ game.size }}×{{ game.size }}</dd>
           </div>
           <div>
             <dt class="text-slate-500 dark:text-slate-400">{{ t.time }}</dt>
@@ -68,8 +69,6 @@ const game = useSudokuGameStore();
 </template>
 
 <style scoped>
-@reference "@/styles/main.css";
-
 .btn-primary {
   @apply rounded-2xl bg-indigo-600 py-3 font-semibold text-white transition active:scale-95;
 }

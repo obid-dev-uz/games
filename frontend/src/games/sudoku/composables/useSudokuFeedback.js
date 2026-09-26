@@ -6,8 +6,11 @@ import { haptic } from "../feedback/haptics";
 
 const FLASH_MS = 700;
 const SHAKE_MS = 400;
-export const WAVE_STEP_MS = 45; // delay per cell of distance from the winning cell
-export const WAVE_MS = 16 * WAVE_STEP_MS + 500; // farthest cell + its animation
+// The win ripple spreads from the winning cell over ~0.7 s on any board size.
+const WAVE_SPREAD_MS = 720;
+/** Delay per cell of distance from the winning cell (45 ms on 9×9). */
+export const waveStepMs = (size) => WAVE_SPREAD_MS / (2 * (size - 1));
+export const WAVE_MS = WAVE_SPREAD_MS + 500; // farthest cell + its animation
 
 /**
  * Turns the outcomes of game moves into sound, vibration and board

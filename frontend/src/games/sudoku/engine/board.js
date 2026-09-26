@@ -1,70 +1,110 @@
-// A board is a flat array of 81 numbers, row by row; 0 means an empty cell.
+// A board is a flat array of size×size numbers, row by row; 0 means an empty cell.
+// size = box × box: 9×9 (box 3), 16×16 (box 4) or 25×25 (box 5).
+// Digits are 1..size and are stored as bit d in 32-bit masks (fits up to 25).
 
-export const SIZE = 9;
-export const BOX = 3;
-export const CELLS = SIZE * SIZE;
 export const EMPTY = 0;
-export const ALL_DIGITS = 0b1111111110; // bits 1..9 set
+export const BOX_SIZES = [3, 4, 5];
 
-export const rowOf = (i) => Math.floor(i / SIZE);
-export const colOf = (i) => i % SIZE;
-export const boxOf = (i) => Math.floor(rowOf(i) / BOX) * BOX + Math.floor(colOf(i) / BOX);
-export const indexOf = (row, col) => row * SIZE + col;
+const cache = new Map();
 
-/** PEERS[i]: the 20 other cells sharing a row, column or box with cell i. */
-export const PEERS = Array.from({ length: CELLS }, (_, i) => {
-  const peers = [];
-  for (let j = 0; j < CELLS; j++) {
-    if (j !== i && (rowOf(j) === rowOf(i) || colOf(j) === colOf(i) || boxOf(j) === boxOf(i))) {
-      peers.push(j);
-    }
-  }
-  return peers;
-});
+/**
+ * Everything that depends on the board size, computed once per box size:
+ * size, cells, row/col/box lookups, peers and units.
+ */
+export function geometry(box = 3) {
+  if (cache.has(box)) return cache.get(box);
+  if (!BOX_SIZES.includes(box)) throw new Error(`Unsupported box size ${box}`);
 
-/** UNITS: the 27 groups of 9 cells (9 rows, 9 columns, 9 boxes). */
-export const UNITS = [
-  ...Array.from({ length: SIZE }, (_, r) => Array.from({ length: SIZE }, (_, c) => indexOf(r, c))),
-  ...Array.from({ length: SIZE }, (_, c) => Array.from({ length: SIZE }, (_, r) => indexOf(r, c))),
-  ...Array.from({ length: SIZE }, (_, b) =>
-    Array.from({ length: SIZE }, (_, k) =>
-      indexOf(Math.floor(b / BOX) * BOX + Math.floor(k / BOX), (b % BOX) * BOX + (k % BOX)),
+  const size = box * box;
+  const cells = size * size;
+  const rowOf = (i) => Math.floor(i / size);
+  const colOf = (i) => i % size;
+  const boxOf = (i) => Math.floor(rowOf(i) / box) * box + Math.floor(colOf(i) / box);
+  const indexOf = (row, col) => row * size + col;
+
+  const ROW = Int16Array.from({ length: cells }, (_, i) => rowOf(i));
+  const COL = Int16Array.from({ length: cells }, (_, i) => colOf(i));
+  const BOXI = Int16Array.from({ length: cells }, (_, i) => boxOf(i));
+
+  /** units: rows, then columns, then boxes; each a list of `size` cells. */
+  const units = [
+    ...Array.from({ length: size }, (_, r) => Array.from({ length: size }, (_, c) => indexOf(r, c))),
+    ...Array.from({ length: size }, (_, c) => Array.from({ length: size }, (_, r) => indexOf(r, c))),
+    ...Array.from({ length: size }, (_, b) =>
+      Array.from({ length: size }, (_, k) =>
+        indexOf(Math.floor(b / box) * box + Math.floor(k / box), (b % box) * box + (k % box)),
+      ),
     ),
-  ),
-];
+  ];
+  /** unitsOfCell[i]: the row, column and box that contain cell i. */
+  const unitsOfCell = Array.from({ length: cells }, (_, i) => [
+    units[ROW[i]],
+    units[size + COL[i]],
+    units[2 * size + BOXI[i]],
+  ]);
+  /** peers[i]: the other cells sharing a row, column or box with cell i. */
+  const peers = Array.from({ length: cells }, (_, i) => [
+    ...new Set(unitsOfCell[i].flat().filter((j) => j !== i)),
+  ]);
 
-/** UNITS_OF_CELL[i]: the 3 units (row, column, box) that contain cell i. */
-export const UNITS_OF_CELL = Array.from({ length: CELLS }, (_, i) =>
-  UNITS.filter((unit) => unit.includes(i)),
-);
+  // Frozen: never changes, and Vue skips non-extensible objects, so the hot
+  // lookups below are not wrapped in reactive proxies when read via a store.
+  const g = Object.freeze({
+    box,
+    size,
+    cells,
+    allDigits: (2 ** (size + 1) - 1) & ~1, // bits 1..size
+    ROW,
+    COL,
+    BOX: BOXI,
+    rowOf,
+    colOf,
+    boxOf,
+    indexOf,
+    units,
+    unitsOfCell,
+    peers,
+  });
+  cache.set(box, g);
+  return g;
+}
 
-export const createEmptyBoard = () => new Array(CELLS).fill(EMPTY);
+/** Geometry of an existing board, from its length (81 → box 3, 256 → 4, 625 → 5). */
+export function geometryOf(board) {
+  const box = Math.round(Math.sqrt(Math.sqrt(board.length)));
+  if (box ** 4 !== board.length) throw new Error(`Not a sudoku board: ${board.length} cells`);
+  return geometry(box);
+}
+
+export const createEmptyBoard = (box = 3) => new Array(geometry(box).cells).fill(EMPTY);
 
 export const countClues = (board) => board.reduce((n, v) => n + (v !== EMPTY ? 1 : 0), 0);
 
-/** "53..7...." (or with 0s) → board. Whitespace is ignored. */
+/**
+ * Text → board. 9×9 accepts the classic 81-character form ("53..7....", 0 or .
+ * for empty); any size accepts numbers separated by spaces/commas/newlines.
+ */
 export function parseBoard(text) {
-  const chars = text.replace(/\s+/g, "");
-  if (chars.length !== CELLS || !/^[0-9.]+$/.test(chars)) {
-    throw new Error("parseBoard: expected 81 characters of 1-9, 0 or .");
+  const compact = text.replace(/\s+/g, "");
+  if (compact.length === 81 && /^[0-9.]+$/.test(compact)) {
+    return [...compact].map((ch) => (ch === "." ? EMPTY : Number(ch)));
   }
-  return [...chars].map((ch) => (ch === "." ? EMPTY : Number(ch)));
+  const values = text
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((v) => (v === "." ? EMPTY : Number(v)));
+  const g = geometryOf(values);
+  if (values.some((v) => !Number.isInteger(v) || v < 0 || v > g.size)) {
+    throw new Error(`parseBoard: values must be 0..${g.size}`);
+  }
+  return values;
 }
-
-/** board → 81-char string with 0 for empty cells (compact storage format). */
-export const serializeBoard = (board) => board.join("");
 
 /** Bitmask of the digits still allowed in cell i. */
-export function candidatesMask(board, i) {
+export function candidatesMask(board, i, g = geometryOf(board)) {
   let used = 0;
-  for (const p of PEERS[i]) used |= 1 << board[p];
-  return ALL_DIGITS & ~used;
-}
-
-export function maskToDigits(mask) {
-  const digits = [];
-  for (let d = 1; d <= SIZE; d++) if (mask & (1 << d)) digits.push(d);
-  return digits;
+  for (const p of g.peers[i]) used |= 1 << board[p];
+  return g.allDigits & ~used;
 }
 
 export function bitCount(mask) {
@@ -75,3 +115,6 @@ export function bitCount(mask) {
   }
   return n;
 }
+
+/** Index of the single set bit (the digit) in a one-bit mask. */
+export const lowestDigit = (mask) => 31 - Math.clz32(mask & -mask);

@@ -1,13 +1,12 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import storage from "../storage";
 import { useSudokuStatsStore } from "./stats";
+import { useSudokuSettingsStore } from "./settings";
 import {
-  CELLS,
   EMPTY,
-  PEERS,
-  UNITS_OF_CELL,
-  serializeBoard,
+  BOX_SIZES,
+  geometry,
   parseBoard,
   generatePuzzleAsync,
   isSolved,
@@ -18,7 +17,8 @@ export const MAX_MISTAKES = 3;
 export const MAX_HINTS = 3;
 const MAX_HISTORY = 500;
 const SAVE_KEY = "current";
-const SAVE_VERSION = 1;
+// v1: 9×9 only, boards as 81-char strings. v2: any size, boards as arrays + box.
+const SAVE_VERSION = 2;
 const AUTOSAVE_EVERY_TICKS = 5;
 
 /**
@@ -36,9 +36,11 @@ const AUTOSAVE_EVERY_TICKS = 5;
  */
 export const useSudokuGameStore = defineStore("sudoku/game", () => {
   const stats = useSudokuStatsStore();
+  const prefs = useSudokuSettingsStore();
 
   const status = ref("idle");
   const difficulty = ref(null);
+  const box = ref(3); // 3 = 9×9, 4 = 16×16, 5 = 25×25
   const seed = ref(null);
   const puzzle = ref([]); // givens, never change during a game
   const solution = ref([]);
@@ -62,9 +64,18 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
   // ---- derived state -------------------------------------------------------
 
+  const geo = computed(() => geometry(box.value));
+  const size = computed(() => geo.value.size); // 9, 16 or 25
+
   const isPlaying = computed(() => status.value === "playing");
   const isGameOver = computed(() => status.value === "won" || status.value === "lost");
   const hintsLeft = computed(() => MAX_HINTS - hintsUsed.value);
+  /**
+   * Mistakes allowed before the game is lost; Infinity = unlimited (never lost,
+   * mistakes are still counted and shown). Follows the setting live, also
+   * during a game.
+   */
+  const mistakeLimit = computed(() => (prefs.settings.mistakeLimit ? MAX_MISTAKES : Infinity));
   const canUndo = computed(() => isPlaying.value && history.value.length > 0);
 
   const isGiven = (i) => puzzle.value[i] !== EMPTY;
@@ -75,13 +86,13 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
   /** digitCounts[d]: how many d's are correctly on the board (index 0 unused). */
   const digitCounts = computed(() => {
-    const counts = new Array(10).fill(0);
+    const counts = new Array(size.value + 1).fill(0);
     board.value.forEach((v, i) => {
       if (v !== EMPTY && v === solution.value[i]) counts[v]++;
     });
     return counts;
   });
-  const remaining = (digit) => 9 - digitCounts.value[digit];
+  const remaining = (digit) => size.value - (digitCounts.value[digit] ?? 0);
 
   // ---- clock ---------------------------------------------------------------
 
@@ -113,11 +124,12 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     if (status.value !== "playing" && status.value !== "paused") return;
     storage.set(SAVE_KEY, {
       v: SAVE_VERSION,
+      box: box.value,
       difficulty: difficulty.value,
       seed: seed.value,
-      puzzle: serializeBoard(puzzle.value),
-      solution: serializeBoard(solution.value),
-      board: serializeBoard(board.value),
+      puzzle: puzzle.value,
+      solution: solution.value,
+      board: board.value,
       notes: notes.value,
       mistakes: mistakes.value,
       hintsUsed: hintsUsed.value,
@@ -134,16 +146,29 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
   function readSave() {
     const data = storage.get(SAVE_KEY);
-    if (!data || data.v !== SAVE_VERSION) return null;
+    if (!data) return null;
     try {
-      getDifficulty(data.difficulty);
-      const parsed = {
-        ...data,
-        puzzle: parseBoard(data.puzzle),
-        solution: parseBoard(data.solution),
-        board: parseBoard(data.board),
-      };
-      if (!Array.isArray(data.notes) || data.notes.length !== CELLS) return null;
+      let parsed;
+      if (data.v === 1) {
+        // Older 9×9 save: boards were 81-character strings.
+        parsed = {
+          ...data,
+          box: 3,
+          puzzle: parseBoard(data.puzzle),
+          solution: parseBoard(data.solution),
+          board: parseBoard(data.board),
+        };
+      } else if (data.v === SAVE_VERSION && BOX_SIZES.includes(data.box)) {
+        parsed = data;
+      } else {
+        return null;
+      }
+      getDifficulty(parsed.difficulty, parsed.box);
+      const { cells, size: n } = geometry(parsed.box);
+      const valid = (b) =>
+        Array.isArray(b) && b.length === cells && b.every((v) => Number.isInteger(v) && v >= 0 && v <= n);
+      if (![parsed.puzzle, parsed.solution, parsed.board].every(valid)) return null;
+      if (!Array.isArray(parsed.notes) || parsed.notes.length !== cells) return null;
       return parsed;
     } catch {
       return null;
@@ -158,6 +183,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
       return false;
     }
     stopClock();
+    box.value = data.box;
     difficulty.value = data.difficulty;
     seed.value = data.seed;
     puzzle.value = data.puzzle;
@@ -177,16 +203,20 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
   // ---- game lifecycle ------------------------------------------------------
 
-  /** Difficulty of an unfinished game, in memory or on disk, if any. */
-  function unfinishedDifficulty() {
-    if (status.value === "playing" || status.value === "paused") return difficulty.value;
-    return readSave()?.difficulty ?? null;
+  /** { box, difficulty } of an unfinished game, in memory or on disk, if any. */
+  function unfinishedGame() {
+    if (status.value === "playing" || status.value === "paused") {
+      return { box: box.value, difficulty: difficulty.value };
+    }
+    const saved = readSave();
+    return saved ? { box: saved.box, difficulty: saved.difficulty } : null;
   }
 
-  async function newGame(level, gameSeed) {
-    getDifficulty(level);
-    const abandoned = unfinishedDifficulty();
-    if (abandoned) stats.recordLoss(abandoned);
+  /** Starts a new puzzle; boxSize 3 = 9×9, 4 = 16×16, 5 = 25×25. */
+  async function newGame(level, gameSeed, boxSize = 3) {
+    getDifficulty(level, boxSize);
+    const abandoned = unfinishedGame();
+    if (abandoned) stats.recordLoss(abandoned.box, abandoned.difficulty);
 
     stopClock();
     clearSave();
@@ -197,7 +227,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
     let result;
     try {
-      result = await generatePuzzleAsync(level, gameSeed);
+      result = await generatePuzzleAsync(level, gameSeed, boxSize);
     } catch (error) {
       if (token === loadToken) {
         status.value = "idle";
@@ -207,12 +237,13 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     }
     if (token !== loadToken) return; // a newer newGame() call won
 
+    box.value = boxSize;
     difficulty.value = result.difficulty;
     seed.value = result.seed;
     puzzle.value = result.puzzle;
     solution.value = result.solution;
     board.value = result.puzzle.slice();
-    notes.value = new Array(CELLS).fill(0);
+    notes.value = new Array(geo.value.cells).fill(0);
     selected.value = null;
     notesMode.value = false;
     mistakes.value = 0;
@@ -221,7 +252,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     history.value = [];
     lastResult.value = null;
 
-    stats.recordStart(level);
+    stats.recordStart(boxSize, level);
     if (pauseAfterLoad) {
       status.value = "paused";
     } else {
@@ -255,10 +286,10 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
   function restart() {
     if (!["playing", "paused", "lost"].includes(status.value)) return;
     // Retrying a lost game is a new attempt.
-    if (status.value === "lost") stats.recordStart(difficulty.value);
+    if (status.value === "lost") stats.recordStart(box.value, difficulty.value);
     stopClock();
     board.value = puzzle.value.slice();
-    notes.value = new Array(CELLS).fill(0);
+    notes.value = new Array(geo.value.cells).fill(0);
     selected.value = null;
     mistakes.value = 0;
     hintsUsed.value = 0;
@@ -273,13 +304,13 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
   function finish(won) {
     stopClock();
     status.value = won ? "won" : "lost";
-    if (won) stats.recordWin(difficulty.value, elapsedMs.value, mistakes.value);
-    else stats.recordLoss(difficulty.value);
+    if (won) stats.recordWin(box.value, difficulty.value, elapsedMs.value, mistakes.value);
+    else stats.recordLoss(box.value, difficulty.value);
     lastResult.value = {
       won,
       timeMs: elapsedMs.value,
       mistakes: mistakes.value,
-      isBestTime: won && stats.isBestTime(difficulty.value, elapsedMs.value),
+      isBestTime: won && stats.isBestTime(box.value, difficulty.value, elapsedMs.value),
     };
     selected.value = null;
     clearSave();
@@ -297,15 +328,15 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
   }
 
   /** Peers of cell i that carry a pencil mark for `digit`. */
-  const peersWithNote = (i, digit) => PEERS[i].filter((p) => hasNote(p, digit));
+  const peersWithNote = (i, digit) => geo.value.peers[i].filter((p) => hasNote(p, digit));
 
   function placeCorrect(i, digit) {
     board.value[i] = digit;
     notes.value[i] = 0;
-    for (const p of PEERS[i]) notes.value[p] &= ~(1 << digit);
+    for (const p of geo.value.peers[i]) notes.value[p] &= ~(1 << digit);
 
     // Rows, columns and boxes this move just completed.
-    const units = UNITS_OF_CELL[i].filter((unit) =>
+    const units = geo.value.unitsOfCell[i].filter((unit) =>
       unit.every((k) => board.value[k] === solution.value[k]),
     );
     if (isSolved(board.value, solution.value)) {
@@ -315,9 +346,16 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     return { type: "correct", cell: i, units };
   }
 
+  // Turning the limit on mid-game when the player is already at or past it
+  // ends the game, just as reaching the limit would.
+  watch(mistakeLimit, (limit) => {
+    const active = status.value === "playing" || status.value === "paused";
+    if (active && mistakes.value >= limit) finish(false);
+  });
+
   function select(i) {
     if (!isPlaying.value) return;
-    selected.value = i === null || (i >= 0 && i < CELLS) ? i : null;
+    selected.value = i === null || (i >= 0 && i < geo.value.cells) ? i : null;
   }
 
   function toggleNotesMode() {
@@ -326,7 +364,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
 
   function input(digit) {
     const i = selected.value;
-    if (!isPlaying.value || i === null || isLocked(i) || digit < 1 || digit > 9) return null;
+    if (!isPlaying.value || i === null || isLocked(i) || digit < 1 || digit > size.value) return null;
 
     if (notesMode.value) {
       if (board.value[i] !== EMPTY) return null;
@@ -347,7 +385,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
       board.value[i] = digit;
       notes.value[i] = 0;
       mistakes.value++;
-      const lost = mistakes.value >= MAX_MISTAKES;
+      const lost = mistakes.value >= mistakeLimit.value;
       if (lost) finish(false);
       outcome = { type: lost ? "lost" : "wrong", cell: i };
     }
@@ -385,7 +423,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     let i = selected.value;
     if (i === null || isLocked(i)) {
       const open = [];
-      for (let k = 0; k < CELLS; k++) if (!isLocked(k)) open.push(k);
+      for (let k = 0; k < geo.value.cells; k++) if (!isLocked(k)) open.push(k);
       if (open.length === 0) return null;
       i = open[Math.floor(Math.random() * open.length)];
     }
@@ -403,6 +441,7 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     // state
     status,
     difficulty,
+    box,
     seed,
     puzzle,
     solution,
@@ -418,9 +457,12 @@ export const useSudokuGameStore = defineStore("sudoku/game", () => {
     loadError,
     hasSavedGame,
     // getters
+    geo,
+    size,
     isPlaying,
     isGameOver,
     hintsLeft,
+    mistakeLimit,
     canUndo,
     digitCounts,
     isGiven,

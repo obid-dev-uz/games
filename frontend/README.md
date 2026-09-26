@@ -1,7 +1,23 @@
 # KHO Games
 
 Android va iOS uchun JavaScript'da yozilgan mobil o'yinlar to'plami.
-Asosiy stek: Vue 3, Pinia, Vue Router, Tailwind CSS v4 va Tauri 2.
+Asosiy stek: Vue 3, Pinia, Vue Router, Tailwind CSS v3 va Tauri 2.
+
+## Qo'llab-quvvatlanadigan qurilmalar
+
+Eng eski qo'llab-quvvatlanadigan engine: **Android WebView / Chrome 88** va **iOS Safari 14**.
+Shu chegara quyidagi uchta joyda belgilangan. Ularni doim bir xil holatda saqlang:
+
+- `.browserslistrc`: CSS prefikslari (autoprefixer);
+- `vite.config.js` → `build.target`: JS sintaksisi;
+- `src/polyfills.js`: kutubxonalar chaqiradigan, lekin Chrome 88 da yo'q metodlar.
+
+Shu sababli:
+- Tailwind **v4 ishlatilmaydi**, chunki u Chrome 111+ talab qiladi (`oklch`, `@layer`);
+- kodda `Array#at`, `structuredClone`, `Object.hasOwn`, `toSorted` kabi yangi metodlarni chaqirmang (polyfill qo'shmasangiz);
+- Tailwind klasslarini doim to'liq yozing (`"bg-" + rang` kabi bo'lib yozilgan klasslar CSS'ga tushmaydi).
+- Eski brauzerlar uchun zaxira qiymat kerak bo'lsa, ikki klassni birga yozmang (`min-h-screen min-h-dvh`,
+  bu ziddiyat hisoblanadi). Zaxirani bitta CSS qoidasiga yozing, masalan `src/styles/main.css` dagi `.min-h-app` kabi.
 
 ## Buyruqlar
 
@@ -9,6 +25,7 @@ Asosiy stek: Vue 3, Pinia, Vue Router, Tailwind CSS v4 va Tauri 2.
 |---|---|
 | `pnpm dev` | Brauzerda ishga tushirish (`http://localhost:1420`) |
 | `pnpm test` | Unit testlar (vitest) |
+| `pnpm lint:classes` | Bir-biriga zid Tailwind klasslarini topish (masalan `p-2 p-4`) |
 | `pnpm build` | Frontend'ni `dist/` ga yig'ish |
 | `pnpm tauri android dev` | Android qurilma yoki emulyatorda ishga tushirish |
 | `pnpm tauri android build` | Play Market uchun AAB yig'ish |

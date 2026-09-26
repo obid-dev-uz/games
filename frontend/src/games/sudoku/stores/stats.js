@@ -2,8 +2,10 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import storage from "../storage";
 import { DIFFICULTY_IDS } from "../engine/difficulty";
+import { BOX_SIZES } from "../engine/board";
 
 const STORAGE_KEY = "stats";
+const STATS_VERSION = 2; // v2: stats per board size; v1 (9×9 only) had difficulties at the top level
 
 const emptyLevel = () => ({
   played: 0,
@@ -15,25 +17,31 @@ const emptyLevel = () => ({
   bestStreak: 0,
 });
 
+const emptySize = (saved = {}) =>
+  Object.fromEntries(DIFFICULTY_IDS.map((id) => [id, { ...emptyLevel(), ...saved?.[id] }]));
+
+/** { 3: { easy: {...}, ... }, 4: {...}, 5: {...} } keyed by box size. */
 function load() {
-  const saved = storage.get(STORAGE_KEY, {});
-  return Object.fromEntries(
-    DIFFICULTY_IDS.map((id) => [id, { ...emptyLevel(), ...saved?.[id] }]),
-  );
+  const saved = storage.get(STORAGE_KEY, {}) ?? {};
+  const sizes = saved.v === STATS_VERSION ? saved.sizes : { 3: saved }; // v1 → the 9×9 stats
+  return Object.fromEntries(BOX_SIZES.map((box) => [box, emptySize(sizes?.[box])]));
 }
 
 export const useSudokuStatsStore = defineStore("sudoku/stats", () => {
-  const levels = ref(load());
+  const sizes = ref(load());
 
-  const save = () => storage.set(STORAGE_KEY, levels.value);
+  const save = () => storage.set(STORAGE_KEY, { v: STATS_VERSION, sizes: sizes.value });
 
-  function recordStart(difficulty) {
-    levels.value[difficulty].played++;
+  /** Stats of one board size and difficulty. */
+  const get = (box, difficulty) => sizes.value[box][difficulty];
+
+  function recordStart(box, difficulty) {
+    get(box, difficulty).played++;
     save();
   }
 
-  function recordWin(difficulty, timeMs, mistakes) {
-    const s = levels.value[difficulty];
+  function recordWin(box, difficulty, timeMs, mistakes) {
+    const s = get(box, difficulty);
     s.won++;
     s.totalWinTimeMs += timeMs;
     if (s.bestTimeMs === null || timeMs < s.bestTimeMs) s.bestTimeMs = timeMs;
@@ -44,29 +52,27 @@ export const useSudokuStatsStore = defineStore("sudoku/stats", () => {
   }
 
   /** A lost or abandoned game ends the winning streak. */
-  function recordLoss(difficulty) {
-    levels.value[difficulty].currentStreak = 0;
+  function recordLoss(box, difficulty) {
+    get(box, difficulty).currentStreak = 0;
     save();
   }
 
-  function isBestTime(difficulty, timeMs) {
-    return levels.value[difficulty].bestTimeMs === timeMs;
-  }
+  const isBestTime = (box, difficulty, timeMs) => get(box, difficulty).bestTimeMs === timeMs;
 
-  const winRate = (difficulty) => {
-    const s = levels.value[difficulty];
+  const winRate = (box, difficulty) => {
+    const s = get(box, difficulty);
     return s.played ? s.won / s.played : 0;
   };
 
-  const averageTimeMs = (difficulty) => {
-    const s = levels.value[difficulty];
+  const averageTimeMs = (box, difficulty) => {
+    const s = get(box, difficulty);
     return s.won ? Math.round(s.totalWinTimeMs / s.won) : null;
   };
 
   function reset() {
-    levels.value = Object.fromEntries(DIFFICULTY_IDS.map((id) => [id, emptyLevel()]));
+    sizes.value = Object.fromEntries(BOX_SIZES.map((box) => [box, emptySize()]));
     save();
   }
 
-  return { levels, recordStart, recordWin, recordLoss, isBestTime, winRate, averageTimeMs, reset };
+  return { sizes, get, recordStart, recordWin, recordLoss, isBestTime, winRate, averageTimeMs, reset };
 });

@@ -10,7 +10,8 @@ const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
  */
 export function loadGames(modules) {
   const games = Object.entries(modules).map(([path, manifest]) => {
-    const folder = path.split("/").at(-2);
+    const parts = path.split("/");
+    const folder = parts[parts.length - 2]; // no Array#at(): Chrome 92+
     if (!manifest || manifest.id !== folder) {
       throw new Error(`${path}: manifest id "${manifest?.id}" must match folder "${folder}"`);
     }

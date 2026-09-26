@@ -3,6 +3,8 @@ import { computed } from "vue";
 
 const props = defineProps({
   value: { type: Number, required: true },
+  cellPx: { type: Number, default: 40 }, // rendered cell size; all fonts scale from it
+  box: { type: Number, default: 3 }, // notes are drawn as a box×box mini grid
   notes: { type: Number, default: 0 }, // bitmask, bit d = digit d
   given: Boolean,
   wrong: Boolean,
@@ -18,7 +20,18 @@ const props = defineProps({
 
 defineEmits(["select"]);
 
-const noteDigits = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const noteDigits = computed(() => Array.from({ length: props.box * props.box }, (_, k) => k + 1));
+
+// Two-digit values (10–25) get a smaller font so they fit the cell.
+const valueStyle = computed(() => ({
+  fontSize: `${props.cellPx * (props.value >= 10 ? 0.46 : 0.6)}px`,
+}));
+const notesStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${props.box}, minmax(0, 1fr))`,
+  gridTemplateRows: `repeat(${props.box}, minmax(0, 1fr))`,
+  // Big boards: notes are only readable zoomed in (40px cell → ~9px text).
+  fontSize: `${(props.cellPx / props.box) * (props.box > 3 ? 0.9 : 0.8)}px`,
+}));
 
 const background = computed(() => {
   if (props.selected) return "bg-indigo-200 dark:bg-indigo-700";
@@ -47,19 +60,20 @@ const textColor = computed(() => {
   >
     <span
       v-if="value"
-      class="text-[clamp(1.1rem,6.2vw,1.75rem)] leading-none"
+      class="leading-none tabular-nums"
       :class="[textColor, given ? 'font-semibold' : 'font-medium']"
+      :style="valueStyle"
     >
       {{ value }}
     </span>
 
-    <span v-else-if="notes" class="grid size-full grid-cols-3 grid-rows-3 p-px">
+    <span v-else-if="notes" class="grid size-full p-px" :style="notesStyle">
       <span
         v-for="d in noteDigits"
         :key="d"
-        class="flex items-center justify-center text-[clamp(0.5rem,2.3vw,0.7rem)] leading-none"
+        class="flex items-center justify-center leading-none"
         :class="
-          d === highlightDigit
+          d === highlightDigit && notes & (1 << d)
             ? 'rounded-sm bg-indigo-500 font-bold text-white'
             : 'text-slate-500 dark:text-slate-400'
         "

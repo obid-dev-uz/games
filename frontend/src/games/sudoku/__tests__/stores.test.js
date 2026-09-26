@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
+import { nextTick } from "vue";
 
 vi.mock("../storage", async () => {
   const { createStorage } = await import("@/shared/createStorage");
@@ -24,7 +25,10 @@ vi.mock("../engine", async (importOriginal) => {
 import storage, { backend } from "../storage";
 import { useSudokuGameStore, MAX_MISTAKES, MAX_HINTS } from "../stores/game";
 import { useSudokuStatsStore } from "../stores/stats";
-import { PEERS } from "../engine/board";
+import { useSudokuSettingsStore } from "../stores/settings";
+import { geometry } from "../engine/board";
+
+const PEERS = geometry(3).peers;
 
 const SEED = 12345;
 
@@ -69,7 +73,7 @@ describe("sudoku/game: new game", () => {
     expect(game.board).toEqual(game.puzzle);
     expect(game.mistakes).toBe(0);
     expect(game.hasSavedGame).toBe(true);
-    expect(useSudokuStatsStore().levels.medium.played).toBe(1);
+    expect(useSudokuStatsStore().get(3, "medium").played).toBe(1);
   });
 
   it("rejects an unknown difficulty", async () => {
@@ -121,7 +125,7 @@ describe("sudoku/game: moves", () => {
     expect(game.status).toBe("playing");
     expect(game.mistakes).toBe(0);
     expect(game.board).toEqual(game.puzzle);
-    expect(useSudokuStatsStore().levels.easy.played).toBe(2);
+    expect(useSudokuStatsStore().get(3, "easy").played).toBe(2);
   });
 
   it("erases wrong digits and notes but never givens", async () => {
@@ -199,7 +203,7 @@ describe("sudoku/game: moves", () => {
     expect(game.status).toBe("won");
     expect(game.lastResult).toMatchObject({ won: true, mistakes: 0, isBestTime: true });
     expect(game.lastResult.timeMs).toBeGreaterThanOrEqual(65_000);
-    const stats = useSudokuStatsStore().levels.hard;
+    const stats = useSudokuStatsStore().get(3, "hard");
     expect(stats).toMatchObject({ played: 1, won: 1, perfectWins: 1, currentStreak: 1 });
     expect(game.hasSavedGame).toBe(false);
   });
@@ -258,6 +262,71 @@ describe("sudoku/game: moves", () => {
   });
 });
 
+describe("sudoku/game: mistake limit setting", () => {
+  it("only counts mistakes when the limit is off", async () => {
+    useSudokuSettingsStore().toggle("mistakeLimit"); // off
+    const game = await startGame();
+    expect(game.mistakeLimit).toBe(Infinity);
+    for (const i of emptyCells(game).slice(0, MAX_MISTAKES + 2)) {
+      game.select(i);
+      game.input(wrongDigit(game, i));
+    }
+    expect(game.mistakes).toBe(MAX_MISTAKES + 2);
+    expect(game.status).toBe("playing");
+  });
+
+  it("turning the limit off mid-game lets the game go on", async () => {
+    const game = await startGame();
+    const cells = emptyCells(game);
+    for (const i of cells.slice(0, MAX_MISTAKES - 1)) {
+      game.select(i);
+      game.input(wrongDigit(game, i));
+    }
+    useSudokuSettingsStore().toggle("mistakeLimit"); // off, mid-game
+    expect(game.mistakeLimit).toBe(Infinity);
+
+    for (const i of cells.slice(MAX_MISTAKES - 1, MAX_MISTAKES + 1)) {
+      game.select(i);
+      game.input(wrongDigit(game, i));
+    }
+    expect(game.mistakes).toBe(MAX_MISTAKES + 1);
+    expect(game.status).toBe("playing");
+  });
+
+  it("turning the limit on below it keeps playing until the limit", async () => {
+    useSudokuSettingsStore().toggle("mistakeLimit"); // off
+    const game = await startGame();
+    const [a, b, c] = emptyCells(game);
+    game.select(a);
+    game.input(wrongDigit(game, a));
+
+    useSudokuSettingsStore().toggle("mistakeLimit"); // on, 1 mistake so far
+    await nextTick();
+    expect(game.status).toBe("playing");
+    for (const i of [b, c]) {
+      game.select(i);
+      game.input(wrongDigit(game, i));
+    }
+    expect(game.status).toBe("lost");
+  });
+
+  it("turning the limit on at or past it ends the game", async () => {
+    useSudokuSettingsStore().toggle("mistakeLimit"); // off
+    const game = await startGame();
+    for (const i of emptyCells(game).slice(0, MAX_MISTAKES + 1)) {
+      game.select(i);
+      game.input(wrongDigit(game, i));
+    }
+    game.pause(); // e.g. the player is on the settings screen
+
+    useSudokuSettingsStore().toggle("mistakeLimit"); // on
+    await nextTick();
+    expect(game.status).toBe("lost");
+    expect(game.lastResult.won).toBe(false);
+    expect(game.hasSavedGame).toBe(false);
+  });
+});
+
 describe("sudoku/game: loading", () => {
   it("starts paused if the player left the game screen while loading", async () => {
     const game = useSudokuGameStore();
@@ -296,7 +365,7 @@ describe("sudoku/game: loading", () => {
     solveAll(game);
     game.restart();
     expect(game.status).toBe("won");
-    expect(useSudokuStatsStore().levels.easy.played).toBe(1);
+    expect(useSudokuStatsStore().get(3, "easy").played).toBe(1);
   });
 });
 
@@ -313,6 +382,81 @@ describe("sudoku/game: clock", () => {
     game.resume();
     vi.advanceTimersByTime(5_000);
     expect(game.elapsedMs).toBe(15_000);
+  });
+});
+
+describe("sudoku/game: board sizes", () => {
+  it("plays and wins a 16×16 game", async () => {
+    const game = useSudokuGameStore();
+    await game.newGame("easy", SEED, 4);
+    expect(game.box).toBe(4);
+    expect(game.size).toBe(16);
+    expect(game.board).toHaveLength(256);
+    expect(game.notes).toHaveLength(256);
+
+    const [i] = emptyCells(game);
+    game.select(i);
+    game.toggleNotesMode();
+    game.input(16); // notes up to the largest digit
+    expect(game.hasNote(i, 16)).toBe(true);
+    game.toggleNotesMode();
+    expect(game.input(17)).toBeNull(); // out of range
+
+    const digit = game.solution[i];
+    const before = game.remaining(digit);
+    game.input(digit);
+    expect(game.remaining(digit)).toBe(before - 1);
+
+    solveAll(game);
+    expect(game.status).toBe("won");
+    expect(useSudokuStatsStore().get(4, "easy")).toMatchObject({ played: 1, won: 1 });
+    expect(useSudokuStatsStore().get(3, "easy").played).toBe(0); // sizes are separate
+  });
+
+  it("restores a 25×25 game after the app is reopened", async () => {
+    const game = useSudokuGameStore();
+    await game.newGame("easy", SEED, 5);
+    const [i] = emptyCells(game);
+    game.select(i);
+    game.input(wrongDigit(game, i));
+    game.pause();
+
+    const reopened = reopenApp();
+    expect(reopened.resume()).toBe(true);
+    expect(reopened.box).toBe(5);
+    expect(reopened.board).toHaveLength(625);
+    expect(reopened.board[i]).toBe(wrongDigit(game, i));
+  });
+
+  it("reads a 9×9 game saved by the previous version", () => {
+    const board = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+    const solution = "534678912672195348198342567859761423426853791713924856961537284287419635345286179";
+    storage.set("current", {
+      v: 1,
+      difficulty: "medium",
+      seed: 1,
+      puzzle: board,
+      solution,
+      board,
+      notes: new Array(81).fill(0),
+      mistakes: 1,
+      hintsUsed: 0,
+      elapsedMs: 5000,
+      history: [],
+    });
+    const game = reopenApp();
+    expect(game.resume()).toBe(true);
+    expect(game.box).toBe(3);
+    expect(game.board.slice(0, 3)).toEqual([5, 3, 0]);
+    expect(game.mistakes).toBe(1);
+  });
+
+  it("moves 9×9 stats saved by the previous version", () => {
+    storage.set("stats", { easy: { played: 4, won: 3, bestTimeMs: 60000 } });
+    setActivePinia(createPinia());
+    const stats = useSudokuStatsStore();
+    expect(stats.get(3, "easy")).toMatchObject({ played: 4, won: 3, bestTimeMs: 60000, perfectWins: 0 });
+    expect(stats.get(4, "easy").played).toBe(0);
   });
 });
 
@@ -351,11 +495,11 @@ describe("sudoku/game: persistence", () => {
     const game = await startGame();
     solveAll(game);
     await game.newGame("easy", SEED + 1);
-    expect(useSudokuStatsStore().levels.easy.currentStreak).toBe(1);
+    expect(useSudokuStatsStore().get(3, "easy").currentStreak).toBe(1);
 
     const reopened = reopenApp(); // unfinished game only on disk
     await reopened.newGame("easy", SEED + 2);
-    const stats = useSudokuStatsStore().levels.easy;
+    const stats = useSudokuStatsStore().get(3, "easy");
     expect(stats).toMatchObject({ played: 3, won: 1, currentStreak: 0, bestStreak: 1 });
   });
 

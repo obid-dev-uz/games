@@ -5,12 +5,22 @@ import { goBack } from "@/shared/navigation";
 import SudokuIcon from "../components/SudokuIcon.vue";
 import { useSudokuGameStore } from "../stores/game";
 import { DIFFICULTIES } from "../engine/difficulty";
+import { BOX_SIZES } from "../engine/board";
+import storage from "../storage";
 import { formatTime } from "../utils/format";
 import t from "../locales/uz";
 
 const router = useRouter();
 const game = useSudokuGameStore();
 const choosing = ref(false);
+
+// Board size for the next game; the last choice is remembered.
+const chosenBox = ref(BOX_SIZES.includes(storage.get("lastBox")) ? storage.get("lastBox") : 3);
+function chooseBox(box) {
+  chosenBox.value = box;
+  storage.set("lastBox", box);
+}
+const sizeLabel = (box) => `${box * box}×${box * box}`;
 
 const canContinue = computed(() => game.status === "playing" || game.status === "paused");
 
@@ -21,7 +31,7 @@ onMounted(() => {
 
 function start(level) {
   choosing.value = false;
-  game.newGame(level).catch(() => {
+  game.newGame(level, undefined, chosenBox.value).catch(() => {
     // Generation failed: leave the empty game screen; home shows game.loadError.
     if (router.currentRoute.value.name === "sudoku-play") goBack(router, { name: "sudoku-home" });
   });
@@ -65,12 +75,32 @@ function start(level) {
       >
         <span class="text-lg font-semibold">{{ t.continue }}</span>
         <span class="text-xs text-indigo-100">
-          {{ DIFFICULTIES[game.difficulty]?.label }} · {{ formatTime(game.elapsedMs) }}
+          {{ sizeLabel(game.box) }} · {{ DIFFICULTIES[game.difficulty]?.label }} · {{ formatTime(game.elapsedMs) }}
         </span>
       </RouterLink>
 
       <template v-if="choosing">
-        <p class="text-center text-sm text-slate-500 dark:text-slate-400">{{ t.chooseDifficulty }}</p>
+        <p class="text-center text-sm text-slate-500 dark:text-slate-400">{{ t.chooseSize }}</p>
+        <div class="grid grid-cols-3 gap-1 rounded-2xl bg-slate-200 p-1 dark:bg-slate-800" role="radiogroup">
+          <button
+            v-for="box in BOX_SIZES"
+            :key="box"
+            type="button"
+            role="radio"
+            :aria-checked="chosenBox === box"
+            class="rounded-xl py-2.5 text-base font-bold tabular-nums transition"
+            :class="
+              chosenBox === box
+                ? 'bg-white text-indigo-600 shadow dark:bg-slate-600 dark:text-white'
+                : 'text-slate-500 dark:text-slate-400'
+            "
+            @click="chooseBox(box)"
+          >
+            {{ sizeLabel(box) }}
+          </button>
+        </div>
+
+        <p class="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">{{ t.chooseDifficulty }}</p>
         <button
           v-for="level in DIFFICULTIES"
           :key="level.id"
@@ -111,8 +141,6 @@ function start(level) {
 </template>
 
 <style scoped>
-@reference "@/styles/main.css";
-
 .icon-link {
   @apply flex size-11 items-center justify-center rounded-full text-slate-700 active:bg-slate-200 dark:text-slate-200 dark:active:bg-slate-800;
 }

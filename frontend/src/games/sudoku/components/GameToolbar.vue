@@ -3,11 +3,17 @@ import SudokuIcon from "./SudokuIcon.vue";
 import { useSudokuGameStore } from "../stores/game";
 import t from "../locales/uz";
 
+defineProps({
+  zoomable: Boolean, // 16×16 and 25×25 boards
+  zoomed: Boolean,
+});
+defineEmits(["toggle-zoom"]);
+
 const game = useSudokuGameStore();
 </script>
 
 <template>
-  <div class="grid grid-cols-4 gap-2">
+  <div class="grid gap-2" :class="zoomable ? 'grid-cols-5' : 'grid-cols-4'">
     <button type="button" class="tool" :disabled="!game.canUndo" @click="game.undo()">
       <SudokuIcon name="undo" class="size-6" />
       <span>{{ t.tools.undo }}</span>
@@ -40,12 +46,22 @@ const game = useSudokuGameStore();
       <span>{{ t.tools.hint }}</span>
       <span class="badge bg-indigo-600 text-white">{{ game.hintsLeft }}</span>
     </button>
+
+    <button
+      v-if="zoomable"
+      type="button"
+      class="tool"
+      :class="zoomed && 'text-indigo-600 dark:text-indigo-300'"
+      :aria-pressed="zoomed"
+      @click="$emit('toggle-zoom')"
+    >
+      <SudokuIcon :name="zoomed ? 'zoom-out' : 'zoom-in'" class="size-6" />
+      <span>{{ zoomed ? t.tools.zoomOut : t.tools.zoomIn }}</span>
+    </button>
   </div>
 </template>
 
 <style scoped>
-@reference "@/styles/main.css";
-
 .tool {
   @apply flex flex-col items-center gap-1 rounded-xl py-2 text-xs font-medium text-slate-600 transition active:scale-90 disabled:opacity-40 dark:text-slate-300;
 }
